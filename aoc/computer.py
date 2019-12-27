@@ -7,23 +7,38 @@ class OpCode(enum.Enum):
     mul = 2
     inp = 3
     out = 4
+    jit = 5
+    jif = 6
+    clt = 7
+    ceq = 8
     hcf = 99
 
     @property
     def n_params(self):
-        if self is self.add or self is self.mul:
+        if self is self.add or self is self.mul or self is self.clt or self is self.ceq:
             return 3
+        if self is self.jit or self is self.jif:
+            return 2
         if self is self.inp or self is self.out:
             return 1
         return 0
 
-    @property
-    def f(self):
+    def f(self, a, b):
         if self is self.add:
-            return lambda a, b: a + b
+            return a + b
         elif self is self.mul:
-            return lambda a, b: a * b
+            return a * b
+        elif self is self.clt:
+            return a < b
+        elif self is self.ceq:
+            return a == b
         return None
+
+    def is_binary_op(self):
+        return self is self.add or self is self.mul
+
+    def is_cmp(self):
+        return self is self.clt or self is self.ceq
 
 
 class Mode(enum.Enum):
@@ -76,26 +91,47 @@ class Computer:
     def read_output(self):
         return self.outputs
 
-    def param(self, value, mode):
-        if mode is Mode.position:
-            return self.state[value]
-        return value
-
     def step(self):
         op = Operation.from_int(self.state[self.ip])
-        if op.opcode is OpCode.add or op.opcode is OpCode.mul:
-            a = self.param(self.state[self.ip+1], op.modes[0])
-            b = self.param(self.state[self.ip+2], op.modes[1])
-            c = self.state[self.ip+3]
-            self.state[c] = op.opcode.f(a, b)
+
+        def param(n, addr=False):
+            value = self.state[self.ip+n+1]
+            if op.modes[n] is Mode.position and not addr:
+                return self.state[value]
+            return value
+
+        # debug_msg = (
+        #     op.opcode.name
+        #     + " ".join([str(param(i)) for i in range(op.opcode.n_params)])
+        # )
+
+        if op.opcode.is_binary_op():
+            self.state[param(2, addr=True)] = op.opcode.f(param(0), param(1))
+            self.ip += op.opcode.n_params + 1
+            return StepResult.ok
+        elif op.opcode is OpCode.jit:
+            if param(0) != 0:
+                self.ip = param(1)
+            else:
+                self.ip += op.opcode.n_params + 1
+            return StepResult.ok
+        elif op.opcode is OpCode.jif:
+            if param(0) == 0:
+                self.ip = param(1)
+            else:
+                self.ip += op.opcode.n_params + 1
+            return StepResult.ok
+        elif op.opcode.is_cmp():
+            result = op.opcode.f(param(0), param(1))
+            self.state[param(2, addr=True)] = 1 if result else 0
             self.ip += op.opcode.n_params + 1
             return StepResult.ok
         elif op.opcode is OpCode.inp:
-            self.state[self.state[self.ip+1]] = self.get_input()
+            self.state[param(0, addr=True)] = self.get_input()
             self.ip += op.opcode.n_params + 1
             return StepResult.ok
         elif op.opcode is OpCode.out:
-            self.output(self.state[self.state[self.ip+1]])
+            self.output(param(0))
             self.ip += op.opcode.n_params + 1
             return StepResult.ok
         elif op.opcode == OpCode.hcf:
