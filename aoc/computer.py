@@ -13,6 +13,7 @@ class OpCode(enum.Enum):
     jif = 6
     clt = 7
     ceq = 8
+    arb = 9
     hcf = 99
 
     @property
@@ -21,7 +22,7 @@ class OpCode(enum.Enum):
             return 3
         if self is self.jit or self is self.jif:
             return 2
-        if self is self.inp or self is self.out:
+        if self is self.inp or self is self.out or self is self.arb:
             return 1
         return 0
 
@@ -46,6 +47,7 @@ class OpCode(enum.Enum):
 class Mode(enum.Enum):
     position = 0
     immediate = 1
+    relative = 2
 
 
 class Operation:
@@ -75,18 +77,22 @@ class Computer:
         self.state = instructions
         self.original_state = list(self.state)
         self.ip = 0
+        self.rb = 0
+        self.inputs = None
         self.outputs = []
         self.debug = debug
 
     @classmethod
-    def from_str(cls, data: str):
-        return cls(list(map(int, data.strip().split(","))))
+    def from_str(cls, data: str, **kwargs):
+        return cls(list(map(int, data.strip().split(","))), **kwargs)
 
     def input(self, inputs):
         self.inputs = deque(inputs)
         return self
 
     def send_input(self, n: int):
+        if self.inputs is None:
+            self.inputs = deque([])
         self.inputs.append(n)
         return self
 
@@ -109,22 +115,46 @@ class Computer:
     def step(self):
         op = Operation.from_int(self.state[self.ip])
 
-        def param(n, addr=False):
-            value = self.state[self.ip+n+1]
-            if op.modes[n] is Mode.position and not addr:
-                return self.state[value]
+        def add_mem():
+            self.state.extend(0 for _ in range(len(self.state)))
+
+        def addr(n):
+            value = read(self.ip+n+1)
+            if op.modes[n] is Mode.relative:
+                return self.rb + value
             return value
+
+        def read(n) -> int:
+            while n > len(self.state):
+                add_mem()
+            return self.state[n]
+
+        def write(n, value):
+            a = addr(n)
+            while a > len(self.state):
+                add_mem()
+            self.state[a] = value
+
+        def param(n):
+            value = read(self.ip+n+1)
+            if op.modes[n] is Mode.position:
+                return read(value)
+            elif op.modes[n] is Mode.relative:
+                return read(self.rb + value)
+            else:  # Mode.immediate
+                return value
 
         if self.debug:
             debug_msg = (
                 op.opcode.name
-                + " "
-                + " ".join([str(param(i)) for i in range(op.opcode.n_params)])
+                + " ".join([""] + [str(param(i)) for i in range(op.opcode.n_params)])
             )
+            if op.opcode.n_params:
+                debug_msg += " (" + ", ".join(mode.name for mode in op.modes) + ")"
             print(debug_msg)
 
         if op.opcode.is_binary_op():
-            self.state[param(2, addr=True)] = op.opcode.f(param(0), param(1))
+            write(2, op.opcode.f(param(0), param(1)))
             self.ip += op.opcode.n_params + 1
             return StepResult.ok
         elif op.opcode is OpCode.jit:
@@ -141,18 +171,22 @@ class Computer:
             return StepResult.ok
         elif op.opcode.is_cmp():
             result = op.opcode.f(param(0), param(1))
-            self.state[param(2, addr=True)] = 1 if result else 0
+            write(2, 1 if result else 0)
             self.ip += op.opcode.n_params + 1
             return StepResult.ok
         elif op.opcode is OpCode.inp:
             inp = self.get_input()
             if inp is None:
                 return StepResult.wait
-            self.state[param(0, addr=True)] = inp
+            write(0, inp)
             self.ip += op.opcode.n_params + 1
             return StepResult.ok
         elif op.opcode is OpCode.out:
             self.output(param(0))
+            self.ip += op.opcode.n_params + 1
+            return StepResult.ok
+        elif op.opcode is OpCode.arb:
+            self.rb += param(0)
             self.ip += op.opcode.n_params + 1
             return StepResult.ok
         elif op.opcode == OpCode.hcf:
