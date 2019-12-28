@@ -1,5 +1,7 @@
+from collections import deque
 import enum
-from typing import List
+from itertools import permutations
+from typing import List, Optional
 
 
 class OpCode(enum.Enum):
@@ -64,32 +66,45 @@ class StepResult(enum.Enum):
     ok = enum.auto()
     stop = enum.auto()
     err = enum.auto()
+    wait = enum.auto()
 
 
 class Computer:
 
-    def __init__(self, instructions: List[int]):
+    def __init__(self, instructions: List[int], debug=False):
         self.state = instructions
         self.original_state = list(self.state)
         self.ip = 0
         self.outputs = []
+        self.debug = debug
 
     @classmethod
     def from_str(cls, data: str):
         return cls(list(map(int, data.strip().split(","))))
 
     def input(self, inputs):
-        self.inputs = inputs
-        self.inputs.reverse()
+        self.inputs = deque(inputs)
+        return self
+
+    def send_input(self, n: int):
+        self.inputs.append(n)
+        return self
 
     def get_input(self):
-        return self.inputs.pop()
+        try:
+            return self.inputs.popleft()
+        except IndexError:
+            return None
 
     def output(self, n):
         self.outputs.append(n)
 
     def read_output(self):
         return self.outputs
+
+    @property
+    def return_value(self):
+        return self.outputs[-1]
 
     def step(self):
         op = Operation.from_int(self.state[self.ip])
@@ -100,10 +115,13 @@ class Computer:
                 return self.state[value]
             return value
 
-        # debug_msg = (
-        #     op.opcode.name
-        #     + " ".join([str(param(i)) for i in range(op.opcode.n_params)])
-        # )
+        if self.debug:
+            debug_msg = (
+                op.opcode.name
+                + " "
+                + " ".join([str(param(i)) for i in range(op.opcode.n_params)])
+            )
+            print(debug_msg)
 
         if op.opcode.is_binary_op():
             self.state[param(2, addr=True)] = op.opcode.f(param(0), param(1))
@@ -127,7 +145,10 @@ class Computer:
             self.ip += op.opcode.n_params + 1
             return StepResult.ok
         elif op.opcode is OpCode.inp:
-            self.state[param(0, addr=True)] = self.get_input()
+            inp = self.get_input()
+            if inp is None:
+                return StepResult.wait
+            self.state[param(0, addr=True)] = inp
             self.ip += op.opcode.n_params + 1
             return StepResult.ok
         elif op.opcode is OpCode.out:
@@ -139,12 +160,52 @@ class Computer:
         else:
             return StepResult.err
 
-    def execute(self) -> int:
+    def execute(self) -> StepResult:
         step = StepResult.ok
         while step == StepResult.ok:
             step = self.step()
-        return self.state[0]
+        self.step_result = step
+        return step
 
     def reset(self):
         self.ip = 0
         self.state = list(self.original_state)
+
+
+class Amplifier:
+    def __init__(self, data: str, n: int):
+        self.n = n
+        self.data = data
+        self.computers = None
+
+    def setup_amps(self, settings: List[int]):
+        self.computers = [_ for _ in range(self.n)]
+        for i in range(self.n):
+            self.computers[i] = Computer.from_str(self.data).input([settings[i]])
+
+    def run_amplifiers(self, first_input: int = 0):
+        self.computers[0].send_input(first_input)
+        for i in range(1, self.n):
+            self.computers[i-1].execute()
+            self.computers[i].send_input(self.computers[i-1].return_value)
+        self.computers[-1].execute()
+
+    def solve(self) -> int:
+        best = 0
+        for settings in permutations(range(self.n)):
+            self.setup_amps(settings)
+            self.run_amplifiers()
+            best = max(best, self.computers[self.n-1].return_value)
+        return best
+
+    def solve_feedback(self) -> int:
+        best = 0
+        for settings in permutations(range(5,5+self.n)):
+            self.setup_amps(settings)
+            self.run_amplifiers()
+            last_step: Optional[StepResult] = None
+            while last_step != StepResult.stop:
+                self.run_amplifiers(first_input=self.computers[-1].return_value)
+                last_step = self.computers[-1].step_result
+                best = max(best, self.computers[self.n-1].return_value)
+        return best

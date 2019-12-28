@@ -13,7 +13,8 @@ from aoc.computer import Computer
 )
 def test_computer_v1(data, answer):
     c = Computer.from_str(data)
-    assert c.execute() == answer
+    c.execute()
+    assert c.state[0] == answer
 
 
 @pytest.mark.parametrize(
@@ -25,7 +26,8 @@ def test_computer_v1(data, answer):
 )
 def test_computer_v2(data, answer):
     c = Computer.from_str(data)
-    assert c.execute() == answer
+    c.execute()
+    assert c.state[0] == answer
 
 
 LONG_CMP_PROGRAM = (
