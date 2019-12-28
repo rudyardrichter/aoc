@@ -36,5 +36,5 @@ def part_1(data: str) -> int:
     return counts[1] * counts[2]
 
 
-def part_2(data: str) -> int:
+def part_2(data: str) -> str:
     return Image.from_str(25, 6, data).composite_pretty()
