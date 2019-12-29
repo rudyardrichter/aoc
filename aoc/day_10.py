@@ -29,12 +29,11 @@ class Raycaster:
         ))
 
     def best_view(self) -> int:
-        best = 0
         asteroids = numpy.argwhere(self.space != 0)
-        for a in asteroids:
-            n = numpy.unique(numpy.apply_along_axis(angle, 1, a - asteroids)).size - 1
-            best = max(best, n)
-        return best
+        return max(
+            numpy.unique(numpy.apply_along_axis(angle, 1, a - asteroids)).size - 1
+            for a in asteroids
+        )
 
 
 def part_1(data: str) -> int:
