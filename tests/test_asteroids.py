@@ -78,7 +78,41 @@ TEST_210 = (
         (TEST_210, 210),
     ]
 )
-def test_raytracer(data, answer):
+def test_raycaster(data, answer):
     if answer > 100 and os.getenv("PYTEST_FILTER") == "SHORT":
         pytest.skip("skipping longer tests")
     assert Raycaster.from_str(data).best_view() == answer
+
+
+@pytest.mark.parametrize(
+    ("data", "n", "results"),
+    [
+        (
+            (
+                "#.#.#\n"
+                ".....\n"
+                "#.#.#\n"
+                ".....\n"
+                "#.#.#\n"
+            ),
+            3,
+            [(2, 0), (4, 0), (4, 2)],
+        ),
+        (
+            (
+                "......#..#\n"
+                ".#........\n"
+                ".....##...\n"
+                ".........#\n"
+                ".........#\n"
+                "..#...#..#\n"
+            ),
+            7,
+            [(6, 0), (9, 0), (6, 2), (9, 3), (9, 4), (9, 5), (6, 5)],
+        ),
+    ]
+)
+def test_vaporize(data, n, results):
+    raycaster = Raycaster.from_str(data)
+    vaporized = list(map(raycaster.vaporized_nth, range(1, n+1)))
+    assert vaporized == results
