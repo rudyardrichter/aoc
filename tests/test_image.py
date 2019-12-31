@@ -1,4 +1,5 @@
 from aoc.day_08 import Image
+from aoc.graphics import to_ascii
 
 
 def test_image_indices():
@@ -9,4 +10,4 @@ def test_image_indices():
 def test_composite():
     image = Image.from_str(2, 2, "0222112222120000")
     assert image.composite().tolist() == [[0, 1], [1, 0]]
-    assert image.composite_pretty() == "█░\n░█"
+    assert to_ascii(image.composite()) == "█░\n░█"
